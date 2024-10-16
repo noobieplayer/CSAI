@@ -1,6 +1,10 @@
 # python -m venv env
 # env\Scripts\activate
 
+# エラー対策コマンド
+# Set-ExecutionPolicy RemoteSigned -Scope Process
+
 # pip install -r requirements.txt
 
 Flask==3.0.3
+Flask-SocketIO
