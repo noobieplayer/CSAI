@@ -8,3 +8,7 @@
 
 Flask==3.0.3
 Flask-SocketIO
+google-cloud-dialogflow
+google-auth
+google-auth-oauthlib
+google-auth-httplib2

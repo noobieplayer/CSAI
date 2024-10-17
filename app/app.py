@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
+from google.cloud import dialogflow_v2 as dialogflow
 
 #Flaskオブジェクトの生成
 app = Flask(__name__)
