@@ -4,3 +4,8 @@
 # pip install -r requirements.txt
 
 Flask==3.0.3
+Flask-SocketIO==5.4.1
+google-cloud-dialogflow==2.33.0
+google-auth==2.35.0
+google-auth-oauthlib==0.2.0
+google-auth-httplib2==1.2.1
