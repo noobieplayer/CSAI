@@ -4,6 +4,8 @@ from google.cloud import dialogflow_v2 as dialogflow
 import os
 from dotenv import load_dotenv
 import sqlite3
+import datetime
+import json
 
 DIALOGFLOW_PROJECT_ID = os.environ.get("DIALOGFLOW_PROJECT_ID")
 DIALOGFLOW_LANGUAGE_CODE = 'ja'
@@ -15,31 +17,75 @@ socketio = SocketIO(app)
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'private_key.json'
 
+reservation_dict = {}
+webhook_one_running = True
+
+def sql_insert_query(req_comment): # SQLのInsert文クエリ発行処理
+    conn = sqlite3.connect('restaurant-A.v3.4.db')  # SQLiteのデータベースファイル
+    cursor = conn.cursor()
+
+    f = open('reservation.json', 'r')
+    reservation_dict_json = json.load(f)
+    f.close()
+
+    date, time, people, name, phone_number_query = reservation_dict_json.values()
+
+    comment_query = req_comment
+
+    date_query = date[0:10]
+    time_query = time[11:16]
+    people_query = int(people)
+    name_query = name["name"]
+    
+    cursor.execute("""
+        SELECT 席番号 FROM 席情報 
+        WHERE 席番号 in (SELECT 席番号 FROM 席情報 
+        WHERE 対応人数 >= ? 
+        EXCEPT SELECT 席番号 FROM 予約 
+        WHERE 予約日 = ? 
+        AND 予約時間 = ?) 
+        ORDER by 対応人数,席番号 LIMIT 1;
+    """, (people_query, date_query, time_query))
+    
+    reservation__table = cursor.fetchall()
+
+    table_num = reservation__table[0][0]
+
+    dt_now = datetime.datetime.now()
+    today_query = dt_now.strftime('%Y-%m-%d')
+    now_time_query = dt_now.strftime('%H:%M')
+
+    cursor.execute("""
+        INSERT INTO 予約 
+        (席番号, 予約人数, 予約者氏名, 電話番号, 日付, 時間, 予約日, 予約時間, 備考) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """, (table_num, people_query, name_query, phone_number_query, today_query, now_time_query, date_query, time_query, comment_query))
+
+    #結果を確定
+    conn.commit()
+
+    conn.close()
+
 # SQLiteデータベースにクエリを実行して予約可能かどうかを確認
 def search_reservations(query_date, query_time, query_people):
-    conn = sqlite3.connect('your_database.db')  # SQLiteのデータベースファイル
+    conn = sqlite3.connect('restaurant-A.v3.4.db')  # SQLiteのデータベースファイル
     cursor = conn.cursor()
     
     # 予約可能な場合を検索
     cursor.execute("""
-        SELECT * FROM reservations
-        WHERE date = ? AND time = ? AND people = ? AND available = 1
-    """, (query_date, query_time, query_people))
+        SELECT 席番号 FROM 席情報 
+        WHERE 対応人数 >= ? 
+        EXCEPT SELECT 席番号 FROM 予約 
+        WHERE 予約日 = ? 
+        AND 予約時間 = ?;
+    """, (query_people, query_date, query_time)) # 予約時間 BETWEEN "18:00" AND "19:00"でもいい
     
     results = cursor.fetchall()
     conn.close()
 
     return len(results) > 0  # 予約が存在する場合はTrueを返す
 
-def detect_intent_texts(project_id, session_id, texts, language_code):
-    """
-    Dialogflowにテキストを送信し、インテントを解析する関数。
-    :param project_id: Google CloudプロジェクトID
-    :param session_id: ユーザーごとのセッションID
-    :param texts: ユーザーが送信するテキスト（リスト）
-    :param language_code: 使用する言語（例: 'ja'）
-    :return: Dialogflowの応答を返す
-    """
+def detect_intent_texts(project_id, session_id, text, language_code):
     
     # Dialogflowセッションクライアントを作成
     session_client = dialogflow.SessionsClient()
@@ -47,26 +93,19 @@ def detect_intent_texts(project_id, session_id, texts, language_code):
     # セッションパスを構築
     session = session_client.session_path(project_id, session_id)
 
-    for text in texts:
-        # ユーザーのテキストを構築
-        text_input = dialogflow.TextInput(text=text, language_code=language_code)
+    # ユーザーのテキストを構築
+    text_input = dialogflow.TextInput(text=text, language_code=language_code)
 
-        # QueryInputにテキストを設定
-        query_input = dialogflow.QueryInput(text=text_input)
+    # QueryInputにテキストを設定
+    query_input = dialogflow.QueryInput(text=text_input)
 
-        # Dialogflow APIにリクエストを送信してインテントを検出
-        response = session_client.detect_intent(
-            request={"session": session, "query_input": query_input}
-        )
+    # Dialogflow APIにリクエストを送信してインテントを検出
+    response = session_client.detect_intent(
+        request={"session": session, "query_input": query_input}
+    )
 
-        # Dialogflow APIにリクエストを送信
-        response = session_client.detect_intent(
-            request={"session": session, "query_input": query_input}
-        )
-
-        # 結果を返す(response.query_result.fulfillment_text)
-        # [response.query_result.query_text,response.query_result.query_text,response.query_result.intent_detection_confidence,response.query_result.fulfillment_text]
-        return response.query_result.fulfillment_text
+    # 結果を返す
+    return response.query_result.fulfillment_text
 
 @app.route('/')
 def index():
@@ -75,32 +114,72 @@ def index():
 # Webhookエンドポイントを設定
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    # DialogflowからのリクエストをJSONとして取得
-    req = request.get_json(silent=True, force=True)
+    global webhook_one_running
 
-    # リクエスト内容を解析
-    intent_name = req['queryResult']['intent']['display_name']  # インテント名を取得
-    parameters = req['queryResult']['parameters']  # パラメータを取得
-    query_text = req['queryResult']['queryText']  # ユーザーの元の発言
+    if webhook_one_running:
+        webhook_one_running = False
 
-    # パラメータの処理（例：予約確認の場合、日付や時間を取得）
-    if intent_name == '予約確認':
-        date = parameters.get('date')  # 日付パラメータ
-        time = parameters.get('time')  # 時間パラメータ
-        people = parameters.get('people')  # 人数パラメータ
+        # DialogflowからのリクエストをJSONとして取得
+        req = request.get_json(silent=True, force=True)
 
-        # 予約状況の確認ロジック（例: データベース検索）
-        # 仮に予約が可能とした場合の応答
-        response_text = f"{date}の{time}に{people}名での予約が可能です。"
-    
+        global reservation_dict
+
+        if req['queryResult']['intent']['displayName'] == "reserve - date" or "not - reserve" in req['queryResult']['intent']['displayName']:
+            reservation_dict = {}
+
+        if req['queryResult']['intent']['displayName'] == "reserve - remarks":
+            sql_insert_query(req['queryResult']['queryText'])
+
+        else:
+            # パラメータを取得
+            parameters = req['queryResult']['parameters']
+            key, value = parameters.popitem()
+
+            # 予約情報の保存処理
+            reservation_dict[key] = value
+
+            if len(reservation_dict) == 5:
+                reservation_json = open('reservation.json', 'w')
+                json.dump(reservation_dict, reservation_json)
+                reservation_json.close()
+
+                reservation_dict = {}
+
+            if len(reservation_dict) == 3:
+                date, time, people = reservation_dict.values()
+
+                date_query = date[0:10]
+                time_query = time[11:16]
+                people_query = int(people)
+
+                date_now = datetime.datetime.now()
+
+                date_time = datetime.datetime(
+                    int(date_query[:4]),  # 年
+                    int(date_query[5:7]), # 月
+                    int(date_query[8:]),  # 日
+                    int(time_query[:2]),  # 時
+                    int(time_query[3:])   # 分
+                )
+
+                if date_time < date_now:
+                    fulfillment_text = "ご希望の予約時刻、及び予約日は過ぎていますので予約できません。"
+                    # Dialogflowに返す応答を構築
+                    return jsonify({
+                        "fulfillmentText": fulfillment_text
+                    })
+
+                is_available = search_reservations(date_query, time_query, people_query)
+
+                # 予約可能かどうかに基づいて応答を生成
+                if not is_available:
+                    fulfillment_text = f"{date_query}の{time_query}に{people_query}名での予約は埋まっています。"
+                    # Dialogflowに返す応答を構築
+                    return jsonify({
+                        "fulfillmentText": fulfillment_text
+                    })
     else:
-        # 他のインテントに対する処理
-        response_text = "何かお手伝いしましょうか？"
-
-    # Dialogflowに返す応答を構築
-    return jsonify({
-        "fulfillmentText": response_text
-    })
+        webhook_one_running = True
 
 @socketio.on('message')
 def handle_message(message):
@@ -115,5 +194,6 @@ def process_message(message, DIALOGFLOW_PROJECT_ID, SESSION_ID):
     # Dialogflowにテキストを送信し、インテントを解析
     return detect_intent_texts(DIALOGFLOW_PROJECT_ID, SESSION_ID, message, language_code)
 
+# Flaskサーバーを実行
 if __name__ == '__main__':
     socketio.run(app)
