@@ -46,4 +46,7 @@ function appendMessage(sender, message, sender_flag) {
     }
 
     conversation.appendChild(msgDiv);
+
+    // 自動スクロール
+    conversation.scrollTop = conversation.scrollHeight;
 }
