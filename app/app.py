@@ -168,6 +168,12 @@ def webhook():
                     return jsonify({
                         "fulfillmentText": fulfillment_text
                     })
+                elif people_query > 6:
+                    fulfillment_text = "申し訳ございませんが、7名以上でのご予約は対応していません。"
+                    # Dialogflowに返す応答を構築
+                    return jsonify({
+                        "fulfillmentText": fulfillment_text
+                    })
 
                 is_available = search_reservations(date_query, time_query, people_query)
 
