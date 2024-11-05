@@ -1,15 +1,19 @@
 <!DOCTYPE html>
-<html>
-    <head>
-    </head>
-    <body>
-        <h1>Webアプリ初心者のFlaskチュートリアル</h1>
-
-        <dev>
-            <form>
-                <input type="text">
-                <button>送信</button>
-            </form>
-        </dev>
-    </body>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>飲食店ボット</title>
+</head>
+<body>
+    <h1>飲食店ボットへようこそ</h1>
+    <div id="chat">
+        <div id="conversation"></div>
+        <input type="text" id="text-input" placeholder="メッセージを入力">
+        <button id="send-btn">送信</button>
+        <button id="voice-btn">🎤</button>
+    </div>
+    <script src="//cdn.socket.io/4.0.0/socket.io.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
 </html>
