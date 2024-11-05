@@ -30,6 +30,7 @@ body {
     border-radius: 20px;
     max-width: 70%;
     font-size: 1.5em;
+    width: fit-content;
 }
 .bot-message {
     background-color: #e0e0e0;
@@ -41,6 +42,7 @@ body {
     color: white;
     align-self: flex-end;
     margin-left: auto;
+    text-align: right;
 }
 .chat-input {
     display: flex;
